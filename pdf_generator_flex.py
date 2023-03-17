@@ -101,17 +101,11 @@ def create_new_client():
         session.add(new_client)
         session.add(new_invoice)
         session.commit()
-        
-        
+
         print(
             f"Le nouveau client a été créé avec succès. ID du client : {new_client_id}")
     else:
         print("Aucune information sur le client entrée. Opération annulée.")
-        
-      
-
-   
-
 
 
 def get_clients_list():
@@ -121,11 +115,10 @@ def get_clients_list():
     session.close()
     return clients_dict
 
+
 def update_clients_list(combobox):
     clients_dict = get_clients_list()
     combobox["values"] = list(clients_dict.keys())
-
-
 
 
 def main():
@@ -150,29 +143,41 @@ def main():
     client_name_combobox["values"] = list(clients_dict.keys())
     client_name_combobox.pack(pady=10)
 
-    def create_invoice_for_selected_client():
+    def create_invoice_for_selected_client(client_id):
         selected_client_id = client_name_var.get()
-        if selected_client_id:
-            client_id = clients_dict[selected_client_id]
-            invoice_data = get_invoice_data(client_id)
+        clients_dict = get_clients_list()
 
-            if invoice_data:
-                save_location = get_save_location()
+        if client_id in clients_dict:
+            client_data = clients_dict[client_id]
+            # Générez la facture pour le client
+            if selected_client_id:
+                client_id = clients_dict[selected_client_id]
+                invoice_data = get_invoice_data(client_id)
 
-                if save_location:
-                    create_invoice(save_location, invoice_data)
-                    print(f"La facture a été créée avec succès : {save_location}")
+                if invoice_data:
+                    save_location = get_save_location()
+
+                    if save_location:
+                        create_invoice(save_location, invoice_data)
+                        print(
+                            f"La facture a été créée avec succès : {save_location}")
+                    else:
+                        print(
+                            "Aucun emplacement de sauvegarde sélectionné. Opération annulée.")
                 else:
-                    print("Aucun emplacement de sauvegarde sélectionné. Opération annulée.")
-            else:
-                print(f"Aucune facture trouvée pour le client avec l'ID {client_id}")
+                    print(
+                        f"Aucune facture trouvée pour le client avec l'ID {client_id}")
+
+    def on_create_invoice():
+        selected_client_id = client_name_combobox.get()
+        if selected_client_id:
+            create_invoice_for_selected_client(selected_client_id)
 
     create_invoice_button = tk.Button(
-        root, text="Créer une facture", command=create_invoice_for_selected_client)
+        root, text="Créer une facture pour le client sélectionné", command=on_create_invoice)
     create_invoice_button.pack(pady=10)
 
     root.mainloop()
-
 
 
 class Client(Base):
