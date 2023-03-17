@@ -2,6 +2,8 @@ import os
 import random
 import string
 import tkinter as tk
+from tkinter import ttk
+import tkinter as tk
 from tkinter import filedialog, simpledialog
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import letter, landscape
@@ -86,34 +88,91 @@ def create_new_client():
     new_client_id = last_client.id + 1 if last_client else 1
 
     # Créer un nouveau client avec le nouvel ID de client
-    new_client_name = simpledialog.askstring("Nouveau client", "Entrez le nom du client:")
-    new_client_address = simpledialog.askstring("Nouveau client", "Entrez l'adresse du client:")
+    new_client_name = simpledialog.askstring(
+        "Nouveau client", "Entrez le nom du client:")
+    new_client_address = simpledialog.askstring(
+        "Nouveau client", "Entrez l'adresse du client:")
 
     if new_client_name and new_client_address:
-        new_client = Client(id=new_client_id, name=new_client_name, address=new_client_address)
-        new_invoice = Invoice(id=new_client_id, invoice_number='INV-'+str(new_client_id), amount=0, client_id=new_client_id)
+        new_client = Client(
+            id=new_client_id, name=new_client_name, address=new_client_address)
+        new_invoice = Invoice(id=new_client_id, invoice_number='INV-' +
+                              str(new_client_id), amount=0, client_id=new_client_id)
         session.add(new_client)
         session.add(new_invoice)
         session.commit()
-        print(f"Le nouveau client a été créé avec succès. ID du client : {new_client_id}")
+        
+        
+        print(
+            f"Le nouveau client a été créé avec succès. ID du client : {new_client_id}")
     else:
         print("Aucune information sur le client entrée. Opération annulée.")
+        
+      
+
+   
+
+
+
+def get_clients_list():
+    session = Session()
+    clients = session.query(Client).all()
+    clients_dict = {client.name: client.id for client in clients}
+    session.close()
+    return clients_dict
+
+def update_clients_list(combobox):
+    clients_dict = get_clients_list()
+    combobox["values"] = list(clients_dict.keys())
+
+
 
 
 def main():
+    # Récupérer la liste des clients
+    clients_dict = get_clients_list()
+
     # Créez l'interface utilisateur pour créer de nouveaux clients
     root = tk.Tk()
     root.title("Générateur de factures")
 
+    def on_create_new_client():
+        create_new_client()
+        update_clients_list(client_name_combobox)
+
     create_new_client_button = tk.Button(
-        root, text="Créer un nouveau client", command=create_new_client)
+        root, text="Créer un nouveau client", command=on_create_new_client)
     create_new_client_button.pack(pady=10)
 
+    # Ajouter une liste déroulante pour sélectionner le client
+    client_name_var = tk.StringVar()
+    client_name_combobox = ttk.Combobox(root, textvariable=client_name_var)
+    client_name_combobox["values"] = list(clients_dict.keys())
+    client_name_combobox.pack(pady=10)
+
+    def create_invoice_for_selected_client():
+        selected_client_id = client_name_var.get()
+        if selected_client_id:
+            client_id = clients_dict[selected_client_id]
+            invoice_data = get_invoice_data(client_id)
+
+            if invoice_data:
+                save_location = get_save_location()
+
+                if save_location:
+                    create_invoice(save_location, invoice_data)
+                    print(f"La facture a été créée avec succès : {save_location}")
+                else:
+                    print("Aucun emplacement de sauvegarde sélectionné. Opération annulée.")
+            else:
+                print(f"Aucune facture trouvée pour le client avec l'ID {client_id}")
+
     create_invoice_button = tk.Button(
-        root, text="Créer une facture", command=create_invoice_ui)
+        root, text="Créer une facture", command=create_invoice_for_selected_client)
     create_invoice_button.pack(pady=10)
 
     root.mainloop()
+
 
 
 class Client(Base):
@@ -125,6 +184,7 @@ class Client(Base):
 
     def __repr__(self):
         return f"Client(id={self.id}, name='{self.name}', address='{self.address}')"
+
 
 class Invoice(Base):
     __tablename__ = 'invoices'
@@ -138,14 +198,18 @@ class Invoice(Base):
         return f"Invoice(id={self.id}, invoice_number='{self.invoice_number}', amount={self.amount}, client_id={self.client_id})"
 
 
-
-
 # Créer une connexion à la base de données SQLite et créer les tables
 engine = create_engine('sqlite:///invoices.db')
 Base.metadata.create_all(engine)
 
 # Créer une session pour interagir avec la base de données
 Session = sessionmaker(bind=engine)
+
+
+def generate_invoice_number(client_name):
+    initials = ''.join([name[0].upper() for name in client_name.split()])
+    unique_number = ''.join([str(random.randint(0, 9)) for _ in range(10)])
+    return f"{initials}{unique_number}"
 
 
 def get_invoice_data(client_id):
@@ -156,7 +220,7 @@ def get_invoice_data(client_id):
         # Récupérer les données de la facture pour le client sélectionné
         # À adapter en fonction de la structure de votre base de données
         invoice_data = {
-            'invoice_number': invoice.id,
+            'invoice_number': generate_invoice_number(invoice.client.name),
             'invoice_date': '01/01/2023',  # À adapter
             'client_name': invoice.client.name,
             'client_address': invoice.client.address,
@@ -174,8 +238,6 @@ def get_invoice_data(client_id):
         return invoice_data
     else:
         return None
-
-
 
 
 def get_save_location():
