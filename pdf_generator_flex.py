@@ -2,7 +2,7 @@ import os
 import random
 import string
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
@@ -10,63 +10,172 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import pandas as pd
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import declarative_base, relationship
+
+# Modèles SQLAlchemy
+Base = declarative_base()
 
 
-# Générer des données aléatoires pour la facture
-def generate_invoice_data():
-     # Générer un identifiant unique basé sur la date et l'heure actuelle, et ajouter des caractères aléatoires
-    unique_id = datetime.now().strftime("%Y%m%d%H%M%S") + ''.join(random.choices(
-        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=4))
-    invoice_number = f'INV-{unique_id}'
-    invoice_date = '01/01/2023'
-    client_name = 'John Doe'
-    client_address = '123 Main St, City, ZIP'
-    items = [
-        {"description": "Produit 1", "quantity": 2,
-         "unit_price": 50, "total": 100},
-        {"description": "Produit 2", "quantity": 1,
-         "unit_price": 75, "total": 75},
-    ]
-    total_ht = 175
-    tva_rate = 20
-    tva = 35
-    total_ttc = 210
+def create_invoice_ui():
+    root = tk.Tk()
+    root.withdraw()
 
-    # Créer un DataFrame à partir des données
-    invoice_df = pd.DataFrame({
-        'invoice_number': [invoice_number],
-        'invoice_date': [invoice_date],
-        'client_name': [client_name],
-        'client_address': [client_address],
-        'items': [items],
-        'total_ht': [total_ht],
-        'tva_rate': [tva_rate],
-        'tva': [tva],
-        'total_ttc': [total_ttc]
-    })
+    client_id = simpledialog.askinteger("Client ID", "Entrez l'ID du client:")
 
-    # Créer le répertoire 'data' s'il n'existe pas
-    if not os.path.exists('data'):
-        os.makedirs('data')
+    if client_id:
+        invoice_data = get_invoice_data(client_id)
 
-    # Enregistrer le DataFrame en tant que fichier Excel
-    invoice_df.to_excel('data/invoice_data.xlsx', index=False)
+        if invoice_data:
+            save_location = get_save_location()
 
-    return invoice_df.iloc[0]
-
-def get_invoice_data():
-    # Vérifier si le fichier Excel contenant les données de la facture existe
-    if os.path.isfile('data/invoice_data.xlsx'):
-        # Lire les données du fichier Excel
-        invoice_df = pd.read_excel('data/invoice_data.xlsx')
-
-        # Convertir les données du DataFrame en un dictionnaire
-        invoice_data = invoice_df.to_dict(orient='records')[0]
+            if save_location:
+                create_invoice(save_location, invoice_data)
+                print(f"La facture a été créée avec succès : {save_location}")
+            else:
+                print("Aucun emplacement de sauvegarde sélectionné. Opération annulée.")
+        else:
+            print(
+                f"Aucune facture trouvée pour le client avec l'ID {client_id}")
     else:
-        # Générer des données aléatoires pour la facture et les enregistrer dans un fichier Excel
-        invoice_data = generate_invoice_data()
+        print("Aucun ID de client entré. Opération annulée.")
 
-    return invoice_data
+
+def create_client():
+    def submit_new_client():
+        name = name_entry.get().strip()
+        address = address_entry.get().strip()
+
+        if name and address:
+            session = Session()
+            new_client = Client(name=name, address=address)
+            session.add(new_client)
+            session.commit()
+            session.close()
+
+            print(f"Client créé avec succès : {name}")
+            new_client_window.destroy()
+        else:
+            print("Veuillez entrer un nom et une adresse valides.")
+
+    new_client_window = tk.Toplevel()
+    new_client_window.title("Créer un nouveau client")
+
+    name_label = tk.Label(new_client_window, text="Nom:")
+    name_label.grid(row=0, column=0, padx=(10, 0), pady=(10, 5))
+    name_entry = tk.Entry(new_client_window)
+    name_entry.grid(row=0, column=1, padx=(0, 10), pady=(10, 5))
+
+    address_label = tk.Label(new_client_window, text="Adresse:")
+    address_label.grid(row=1, column=0, padx=(10, 0), pady=(0, 5))
+    address_entry = tk.Entry(new_client_window)
+    address_entry.grid(row=1, column=1, padx=(0, 10), pady=(0, 5))
+
+    submit_button = tk.Button(
+        new_client_window, text="Créer", command=submit_new_client)
+    submit_button.grid(row=2, columnspan=2, pady=(10, 10))
+
+
+def create_new_client():
+    # Récupérer le dernier ID de client utilisé
+    session = Session()
+    last_client = session.query(Client).order_by(Client.id.desc()).first()
+    new_client_id = last_client.id + 1 if last_client else 1
+
+    # Créer un nouveau client avec le nouvel ID de client
+    new_client_name = simpledialog.askstring("Nouveau client", "Entrez le nom du client:")
+    new_client_address = simpledialog.askstring("Nouveau client", "Entrez l'adresse du client:")
+
+    if new_client_name and new_client_address:
+        new_client = Client(id=new_client_id, name=new_client_name, address=new_client_address)
+        new_invoice = Invoice(id=new_client_id, invoice_number='INV-'+str(new_client_id), amount=0, client_id=new_client_id)
+        session.add(new_client)
+        session.add(new_invoice)
+        session.commit()
+        print(f"Le nouveau client a été créé avec succès. ID du client : {new_client_id}")
+    else:
+        print("Aucune information sur le client entrée. Opération annulée.")
+
+
+def main():
+    # Créez l'interface utilisateur pour créer de nouveaux clients
+    root = tk.Tk()
+    root.title("Générateur de factures")
+
+    create_new_client_button = tk.Button(
+        root, text="Créer un nouveau client", command=create_new_client)
+    create_new_client_button.pack(pady=10)
+
+    create_invoice_button = tk.Button(
+        root, text="Créer une facture", command=create_invoice_ui)
+    create_invoice_button.pack(pady=10)
+
+    root.mainloop()
+
+
+class Client(Base):
+    __tablename__ = 'clients'
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    address = Column(String)
+    invoices = relationship("Invoice", back_populates="client")
+
+    def __repr__(self):
+        return f"Client(id={self.id}, name='{self.name}', address='{self.address}')"
+
+class Invoice(Base):
+    __tablename__ = 'invoices'
+    id = Column(Integer, primary_key=True)
+    invoice_number = Column(String)
+    amount = Column(Integer)
+    client_id = Column(Integer, ForeignKey('clients.id'))  # Modifié ici
+    client = relationship("Client", back_populates="invoices")
+
+    def __repr__(self):
+        return f"Invoice(id={self.id}, invoice_number='{self.invoice_number}', amount={self.amount}, client_id={self.client_id})"
+
+
+
+
+# Créer une connexion à la base de données SQLite et créer les tables
+engine = create_engine('sqlite:///invoices.db')
+Base.metadata.create_all(engine)
+
+# Créer une session pour interagir avec la base de données
+Session = sessionmaker(bind=engine)
+
+
+def get_invoice_data(client_id):
+    session = Session()
+    invoice = session.query(Invoice).filter_by(id=client_id).first()
+
+    if invoice:
+        # Récupérer les données de la facture pour le client sélectionné
+        # À adapter en fonction de la structure de votre base de données
+        invoice_data = {
+            'invoice_number': invoice.id,
+            'invoice_date': '01/01/2023',  # À adapter
+            'client_name': invoice.client.name,
+            'client_address': invoice.client.address,
+            'items': [
+                {"description": "Produit 1", "quantity": 2,
+                    "unit_price": 50, "total": 100},
+                {"description": "Produit 2", "quantity": 1,
+                    "unit_price": 75, "total": 75},
+            ],
+            'total_ht': 175,
+            'tva_rate': 20,
+            'tva': 35,
+            'total_ttc': 210
+        }
+        return invoice_data
+    else:
+        return None
+
+
 
 
 def get_save_location():
@@ -78,102 +187,78 @@ def get_save_location():
 
 
 def create_invoice(output_file, invoice_data):
-    # Créez un objet SimpleDocTemplate avec les marges et la taille de la page spécifiées
-    doc = SimpleDocTemplate(output_file, pagesize=letter,
-                            rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
-    elements = []
-    # Styles
+    doc = SimpleDocTemplate(output_file, pagesize=letter)
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name='Center', alignment=TA_CENTER))
-    styles.add(ParagraphStyle(name='Left', alignment=TA_LEFT))
-
-    # Ajouter le logo de l'entreprise (si le fichier 'mon_logo.png' existe)
-    logo_path = r'C:\Users\Username\Documents\logo.png'
-    if os.path.isfile(logo_path):
-        logo = logo_path
-        elements.append(logo)
+    data = []
 
     # Titre de la facture
-    elements.append(Paragraph("Facture", styles["Heading1"]))
-    elements.append(Spacer(1, 24))
+    title_style = ParagraphStyle(
+        'title', parent=styles['Title'], fontSize=24, alignment=TA_CENTER)
+    title = Paragraph("Facture", title_style)
+    data.append([title])
 
-    # Informations sur l'entreprise
-    elements.append(Paragraph("Nom de l'entreprise", styles["Normal"]))
-    elements.append(Paragraph("Adresse", styles["Normal"]))
-    elements.append(Paragraph("Ville, Code postal", styles["Normal"]))
-    elements.append(Paragraph("Téléphone: 0123456789", styles["Normal"]))
-    elements.append(Spacer(1, 24))
+    # Informations sur la facture et le client
+    client_info = Paragraph(
+        f"Numéro de facture : {invoice_data['invoice_number']}<br/>"
+        f"Date de facture : {invoice_data['invoice_date']}<br/>"
+        f"<br/>"
+        f"Nom du client : {invoice_data['client_name']}<br/>"
+        f"Adresse du client : {invoice_data['client_address']}",
+        styles["Normal"]
+    )
+    data.append([client_info])
 
-    # Informations sur le client
-    elements.append(Paragraph(f"Facturé à :", styles["Normal"]))
-    elements.append(
-        Paragraph(f"{invoice_data['client_name']}", styles["Normal"]))
-    elements.append(
-        Paragraph(f"{invoice_data['client_address']}", styles["Normal"]))
-    elements.append(Spacer(1, 24))
+    # Ajouter un espace
+    spacer = Spacer(1, 20)
+    data.append([spacer])
 
-    # Informations sur la facture
-    elements.append(Paragraph(
-        f"Numéro de facture : {invoice_data['invoice_number']}", styles["Normal"]))
-    elements.append(Paragraph(
-        f"Date de la facture : {invoice_data['invoice_date']}", styles["Normal"]))
-    elements.append(Spacer(1, 24))
+    # Détails des articles
+    items_header = ["Description", "Quantité", "Prix unitaire", "Total"]
+    items_data = [items_header]
+    for item in invoice_data["items"]:
+        items_data.append(
+            [item["description"], item["quantity"],
+                item["unit_price"], item["total"]]
+        )
+    items_table = Table(items_data)
+    items_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ("ALIGN", (1, 1), (-1, -1), "CENTER"),
+            ]
+        )
+    )
+    data.append([items_table])
 
+    # Ajouter un espace
+    data.append([spacer])
 
-    # Créer un tableau pour les articles de la facture
-    table_data = [['Description', 'Quantité', 'Prix unitaire', 'Total']]
+    # Récapitulatif des montants
+    recap = Paragraph(
+        f"Total HT : {invoice_data['total_ht']} €<br/>"
+        f"TVA ({invoice_data['tva_rate']} %) : {invoice_data['tva']} €<br/>"
+        f"Total TTC : {invoice_data['total_ttc']} €",
+        styles["Normal"],
+    )
+    data.append([recap])
 
-    # Ajouter les articles de la facture au tableau
-    for item in invoice_data['items']:
-        table_data.append(
-            [item['description'], item['quantity'], item['unit_price'], item['total']])
+    # Créer un tableau pour organiser les éléments de la facture
+    table = Table(data, colWidths=[doc.width])
+    table.setStyle(
+        TableStyle(
+            [
+                ("TOPPADDING", (0, 0), (-1, -1), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
 
-    # Créer un objet Table à partir des données du tableau et appliquer un style
-    table = Table(table_data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 14),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 12),
-        ('TOPPADDING', (0, 1), (-1, -1), 12),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 12),
-    ]))
-    # Ajouter le tableau à la liste des éléments de la facture
-    elements.append(table)
-    elements.append(Spacer(1, 12))
+    # Ajouter la table au document et construire le document
+    doc.build([table])
 
-    # Ajouter le total HT, la TVA et le total TTC à la facture
-    elements.append(
-        Paragraph(f"Total (HT) : {invoice_data ['total_ht']} €", styles["Normal"]))
-    elements.append(Paragraph(
-        f"TVA ({invoice_data ['tva_rate']}%) : {invoice_data ['tva']} €", styles["Normal"]))
-    elements.append(
-        Paragraph(f"Total (TTC) : {invoice_data ['total_ttc']} €", styles["Normal"]))
-
-    # Générer la facture en PDF en ajoutant les éléments à l'objet SimpleDocTemplate
-    doc.build(elements)
 
 if __name__ == "__main__":
-    # Générer des données de facture aléatoires à partir du fichier Excel facture_data.xlsx
-    invoice_data = generate_invoice_data()
-# Obtenir l'emplacement de sauvegarde choisi par l'utilisateur
-save_location = get_save_location()
-    # Afficher les données de facture
-print(invoice_data)
-
-# Vérifier si l'utilisateur a sélectionné un emplacement de sauvegarde
-if save_location:
-    # Créer la facture en PDF à l'emplacement choisi avec les données fournies
-    create_invoice(save_location, invoice_data)
-
-    # Afficher un message indiquant que la facture a été créée avec succès
-    print(f"La facture a été créée avec succès : {save_location}")
-else:
-    # Afficher un message indiquant que l'utilisateur n'a pas sélectionné d'emplacement de sauvegarde et que l'opération a été annulée
-    print("Aucun emplacement de sauvegarde sélectionné. Opération annulée.")
+    main()
