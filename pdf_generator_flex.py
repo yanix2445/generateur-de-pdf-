@@ -128,6 +128,10 @@ def main():
     # Créez l'interface utilisateur pour créer de nouveaux clients
     root = tk.Tk()
     root.title("Générateur de factures")
+    root.geometry("600x800"),
+                                  
+    
+    root.title("Générateur de factures")
 
     def on_create_new_client():
         create_new_client()
